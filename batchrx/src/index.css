@@ -1,0 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Manrope:wght@700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'DM Sans', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { margin: 0; min-width: 320px; }
+button, input { font: inherit; }
+
+html { scroll-behavior: smooth; }
+
+@keyframes batchrx-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes batchrx-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes batchrx-scan {
+  0%, 100% { opacity: 0.35; transform: scaleX(0.82); transform-origin: left; }
+  50% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+}
+
+.batchrx-rise { animation: batchrx-rise 700ms ease-out both; }
+.batchrx-rise-delay-1 { animation-delay: 120ms; }
+.batchrx-rise-delay-2 { animation-delay: 240ms; }
+.batchrx-rise-delay-3 { animation-delay: 360ms; }
+.batchrx-float { animation: batchrx-float 5s ease-in-out infinite; }
+.batchrx-scan { animation: batchrx-scan 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .batchrx-rise, .batchrx-float, .batchrx-scan { animation: none; }
+}
+
+:root[data-theme='dark'] body { background: #10232e; color: #edf7f4; }
+:root[data-theme='dark'] .bg-mist { background-color: #10232e !important; }
+:root[data-theme='dark'] .bg-white { background-color: #173042 !important; }
+:root[data-theme='dark'] .text-ink { color: #edf7f4 !important; }
+:root[data-theme='dark'] .text-slate { color: #a9c0c5 !important; }
+:root[data-theme='dark'] .border-ink\/10 { border-color: rgba(237, 247, 244, 0.16) !important; }
+:root[data-theme='dark'] input,
+:root[data-theme='dark'] select { background-color: #173042 !important; color: #edf7f4 !important; }
+:root[data-theme='dark'] .bg-mint { background-color: #214d4b !important; }

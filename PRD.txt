@@ -1,0 +1,375 @@
+BatchRx — Product Requirements Document
+Version: 1.0
+Date: September 2026
+Author: Deepansh
+Status: Ready for Development
+
+1. Executive Summary
+BatchRx is a purpose-built, client-side web application for neighbourhood pharmacies to manage medicine stock by batch, enforce First-Expiry-First-Out (FEFO) dispensing, and get proactive alerts on batches nearing or past expiry. It replaces manual spreadsheets and guesswork with a fast, keyboard-friendly pharmacist interface that makes FEFO the default — not an afterthought.
+
+2. Problem Statement
+A neighbourhood pharmacy stocks the same medicine across multiple batches, each with its own expiry date. Three critical operational problems arise daily:
+
+#	Problem	Risk if Unsolved
+1	Pharmacist dispenses from the wrong batch — not the one expiring soonest	Medicine waste, regulatory non-compliance
+2	Expired batches remain on the shelf and get dispensed	Patient safety incident
+3	No fast way to answer "do we have paracetamol in date?"	Customer wait time, loss of trust
+No general-purpose ERP addresses these three together in a single, fast UI. BatchRx does exactly this.
+
+3. Goals
+G1: Enforce FEFO dispensing automatically — pharmacist never has to think about batch order
+G2: Exclude expired batches from all sellable stock calculations
+G3: Answer in-date stock queries in under 3 seconds
+G4: Alert pharmacist on batches about to expire before they become a problem
+G5: Create a physical action bridge via Pick Slips so software instructions map to shelf actions
+G6: Maintain a Quarantine Zone so expired stock is tracked, not silently deleted
+4. Out of Scope (for this version)
+Multi-user / role-based access
+Server-side database or cloud sync
+Barcode / QR scanning
+Supplier integrations
+Billing or POS functionality
+Mobile native app
+5. Target User
+Primary: Pharmacist (solo or small team)
+
+Attribute	Detail
+Technical skill	Low–medium. Comfortable with web apps, not developers
+Context	Behind a counter, serving customers, time-pressured
+Primary device	Desktop or laptop browser
+Key need	Fast answers, no training required, zero error margin on expiry
+6. Core Domain Concepts
+6.1 Medicine
+A named drug stocked by the pharmacy. A medicine has no quantity of its own — quantity lives entirely in its batches.
+
+6.2 Batch
+A physical delivery of a medicine with a specific quantity and expiry date. One medicine can have many active batches simultaneously.
+
+6.3 FEFO Rule
+When dispensing, always pull from the batch with the earliest expiry date first. If that batch doesn't have enough quantity, spill into the next-earliest batch, and so on.
+
+6.4 Sellable Stock
+Sum of quantity across all active (non-expired, non-quarantined) batches of a medicine.
+
+6.5 Pick Slip
+A human-readable instruction generated at dispense time that tells the pharmacist exactly which physical boxes to pull from which batch. Bridges the app and the shelf.
+
+6.6 Quarantine
+Expired batches are never deleted. They move to Quarantine status. The pharmacist must explicitly mark them "Disposed" or "Returned to Supplier" to close the loop.
+
+6.7 Batch Health Score
+A computed score (0–100) per medicine. Combines two signals:
+
+Percentage of stock expiring within 30 days
+Days until the earliest active batch expires
+Lower score = more urgent. Dashboard sorts by this ascending so the sickest medicine is always at the top.
+
+7. Data Models
+Medicine
+├── id             String (uuid)
+├── name           String
+├── category       String (e.g. "Analgesic", "Antibiotic")
+└── unit           String (e.g. "tablets", "ml", "capsules")
+
+Batch
+├── id             String (uuid)
+├── medicineId     String → Medicine.id
+├── batchCode      String (e.g. "A002", pharmacist-assigned)
+├── quantity       Number (current remaining)
+├── originalQty    Number (at time of receipt)
+├── expiryDate     Date
+├── receivedDate   Date
+└── status         Enum: "active" | "quarantine" | "disposed" | "returned"
+
+DispenseLog
+├── id             String (uuid)
+├── medicineId     String → Medicine.id
+├── medicineName   String (denormalised for log readability)
+├── totalQty       Number (total dispensed)
+├── picklist       Array<{ batchId, batchCode, qty, expiryDate }>
+└── timestamp      DateTime
+
+8. Feature Specifications
+8.1 Omni-Search
+Trigger: Pharmacist types in the top search bar
+Behaviour:
+
+Fuzzy match on medicine name (case-insensitive, partial match)
+Returns results in real time as user types
+Each result shows:
+Medicine name + category
+Total sellable stock (in-date only, bold)
+Days until earliest batch expires
+Explicit in-date / out-of-stock / fully-expired status badge
+Response format example:
+
+✅ Paracetamol 500mg — 480 tablets in date — earliest batch expires in 14 days
+
+⚠️ Amoxicillin 250mg — 60 capsules in date — earliest batch expires in 3 days
+
+🔴 Ibuprofen 400mg — No sellable stock — all batches expired
+
+Edge cases:
+
+Medicine exists but all batches expired → show red, 0 sellable, prompt to check Quarantine
+Medicine not found → "No medicine matches. Add it?"
+8.2 Medicine Card Dashboard
+Layout: Grid of cards, sorted by Batch Health Score (ascending — worst first)
+
+Each card shows:
+
+Medicine name + category chip
+Sellable stock count + unit
+Health Score bar (colour: green ≥ 70, amber 30–69, red < 30)
+Next expiry date
+Quick action: [Dispense] [View Batches]
+Sort / Filter controls:
+
+Sort: Health Score (default) | Name | Stock level
+Filter: All | Expiring <7d | Expiring <30d | Fully Expired
+8.3 Add Batch Form
+Trigger: "+ Add Batch" button (always visible top-right)
+
+Fields:
+
+Field	Type	Validation
+Medicine	Searchable dropdown (or "Create new")	Required
+Batch Code	Text	Required, unique per medicine
+Quantity	Number	> 0
+Unit	Auto-filled from medicine, editable	Required
+Expiry Date	Date picker	Must be future date
+Received Date	Date picker	Defaults to today
+On submit:
+
+Batch saved to localStorage
+Toast: "Batch A002 added — 200 tablets, expires Aug 12"
+Medicine card health score recalculates immediately
+New medicine inline creation:
+
+If medicine not in dropdown, "Create new medicine" option appears
+Inline mini-form: Name, Category, Unit
+Saves medicine then returns to batch form pre-filled
+8.4 FEFO Dispense Engine
+This is the core logic of the entire application.
+
+Algorithm:
+
+Input: medicineId, quantityRequested
+
+1. Fetch all batches for medicine where status = "active"
+2. Filter: remove batches where expiryDate <= today
+3. Sort ascending by expiryDate (earliest first)
+4. Walk the sorted list, filling quantityRequested:
+   a. Take min(batch.quantity, remaining_needed) from current batch
+   b. Add { batchId, batchCode, qty, expiryDate } to picklist
+   c. Deduct from remaining_needed
+   d. Move to next batch if remaining_needed > 0
+5. If remaining_needed > 0 after all batches → shortfall flag
+6. Return { picklist, fulfilled, shortfall, shortfallQty }
+Rules:
+
+Expired batches are never touched, even if quantity remains in them
+If total sellable stock < requested qty → partial fill with shortfall warning, never silent
+8.5 Dispense Modal + Pick Slip
+Trigger: [Dispense] on a medicine card
+
+Step 1 — Enter Quantity:
+
+Medicine name (large, clear)
+Sellable stock shown below input
+Number input for requested quantity
+Warning inline if quantity exceeds sellable stock
+Step 2 — Pick Slip (auto-generated on confirm):
+
+┌─────────────────────────────────────────┐
+│  PICK SLIP — Paracetamol 500mg          │
+│  Total: 30 tablets   |  17 Sep 2026     │
+├─────────────────────────────────────────┤
+│  1. Batch A002  →  Pull 10 tablets      │
+│     Expires: 12 Aug 2026                │
+│  2. Batch B007  →  Pull 20 tablets      │
+│     Expires: 03 Sep 2026                │
+└─────────────────────────────────────────┘
+Each row = one physical box to pull
+Sorted earliest expiry first (matching FEFO)
+[Confirm Dispense] deducts quantities from batches in localStorage
+If batch quantity hits 0 → batch status set to "exhausted" (auto-archived, not quarantined)
+DispenseLog entry created
+Shortfall case:
+
+⚠️ Only 18 tablets available. Proceed with partial fill? Pick Slip will reflect 18, not 30.
+
+8.6 Alert Feed
+Location: Left sidebar, always visible
+
+Three buckets, in this order:
+
+Bucket	Condition	Colour
+🔴 Expired Today or Before	expiryDate <= today, status still active	Red
+🟠 Expiring in < 7 days	expiryDate within 7 days	Amber
+🟡 Expiring in < 30 days	expiryDate within 30 days	Yellow
+Each alert item shows:
+
+Medicine name + Batch Code
+Expiry date + days remaining / overdue
+[Quarantine] action button on expired items
+Auto-quarantine: On app load, any batch past expiry and still "active" is flagged red. System does not auto-move it — pharmacist must click [Quarantine] to formally acknowledge. This preserves audit trail.
+
+8.7 Quarantine Zone
+Location: Dedicated tab in the right panel
+
+Shows: All batches with status = "quarantine"
+
+Each entry:
+
+Medicine name, Batch Code, original quantity, expiry date
+Date moved to quarantine
+Actions: [Mark Disposed] | [Return to Supplier]
+On action:
+
+Status updated to "disposed" or "returned"
+Batch removed from Quarantine view
+Toast confirmation
+No batch is ever hard-deleted from the system. Audit trail is permanent.
+
+8.8 Batch Health Score — Calculation
+score = 100
+
+Penalty 1 — Expiry proximity of earliest batch:
+  if days_to_expiry < 7  → subtract 50
+  if days_to_expiry < 30 → subtract 30
+  if days_to_expiry < 60 → subtract 10
+
+Penalty 2 — Proportion of stock near expiry:
+  pct_expiring_soon = qty_in_batches_expiring_within_30d / total_sellable_qty
+  subtract floor(pct_expiring_soon * 30)
+
+Final score = clamp(score, 0, 100)
+Score 0 = medicine needs immediate attention.
+Score 100 = all stock healthy, nothing near expiry.
+
+9. User Flows
+Flow A — "Do we have paracetamol in date?"
+Pharmacist types "para" in search bar
+→ Instant result: "Paracetamol 500mg — 480 tablets in date — expires in 14 days"
+→ Pharmacist confirms to customer. Done. 3 seconds.
+Flow B — Dispense 30 Paracetamol
+Pharmacist clicks [Dispense] on Paracetamol card
+→ Enters 30
+→ FEFO engine runs silently
+→ Pick Slip appears: "Pull 10 from A002, pull 20 from B007"
+→ Pharmacist confirms → stock deducted → log entry created
+Flow C — New stock arrives (new batch)
+Pharmacist clicks [+ Add Batch]
+→ Selects Paracetamol, enters batch code, qty, expiry date
+→ Batch saved → card updates → health score recalculates
+Flow D — Morning check (expiry alerts)
+Pharmacist opens app
+→ Alert sidebar shows 2 red (expired), 1 amber (<7d)
+→ Clicks [Quarantine] on expired batches
+→ Quarantine tab now shows those 2 batches
+→ End of day: marks them [Disposed]
+Flow E — New medicine not in system
+Pharmacist clicks [+ Add Batch]
+→ Types "Metformin" — not found
+→ Clicks "Create new medicine"
+→ Inline form: Name, Category, Unit
+→ Saved, batch form continues with it pre-selected
+10. Tech Stack
+Core
+Layer	Technology	Rationale
+Framework	React 18 + Vite	Fast setup, hot reload, familiar
+Language	JavaScript (ES2022)	No TS overhead in a 2-hr build
+Styling	Tailwind CSS (npm)	Utility-first, no time lost on custom CSS
+State	useReducer + Context API	No external lib needed at this scope
+Date logic	date-fns	Reliable, tree-shakable, no moment.js bloat
+Persistence	localStorage (JSON)	Client-side demo, honest, zero backend needed
+Notifications	react-hot-toast	One import, one line per alert
+Icons	lucide-react	Consistent, lightweight
+Unique IDs	crypto.randomUUID()	Native browser API, no uuid package needed
+Folder Structure
+src/
+├── context/
+│   └── PharmacyContext.jsx      ← global state, reducer, actions
+├── engine/
+│   └── fefo.js                  ← pure FEFO function (no React)
+│   └── healthScore.js           ← batch health score calculation
+│   └── storage.js               ← localStorage read/write helpers
+├── components/
+│   ├── SearchBar.jsx
+│   ├── MedicineCard.jsx
+│   ├── AddBatchModal.jsx
+│   ├── DispenseModal.jsx
+│   ├── PickSlip.jsx
+│   ├── AlertFeed.jsx
+│   └── QuarantinePanel.jsx
+├── pages/
+│   └── Dashboard.jsx
+├── data/
+│   └── seed.js                  ← realistic demo data on first load
+└── main.jsx
+Why no external state library:
+Zustand or Redux adds setup time with no benefit here. The entire state is one object (medicines + batches + logs). useReducer handles it cleanly.
+
+Why not TypeScript:
+Correct choice for production at scale. Wrong choice for a 2-hour build where you know the data shapes. Add it post-build if needed.
+
+11. Non-Functional Requirements
+Requirement	Target
+Search response time	< 100ms (in-memory, no network)
+Dispense modal load	Instant (FEFO runs synchronously)
+Data persistence	Survives browser refresh via localStorage
+Browser support	Chrome, Firefox, Edge (last 2 versions)
+Responsive	Desktop-first, usable at 1280px+
+Accessibility	All interactive elements keyboard-accessible
+12. UI Design Principles
+Readability over aesthetics. Clinical environment. High contrast text, no glassmorphism.
+No hidden state. Every action (dispense, quarantine, dispose) has a visible confirmation.
+Worst first. Dashboard always surfaces the most urgent medicine at top.
+Alert is not a popup. The alert sidebar is always visible — pharmacist doesn't dismiss it, they act on it.
+Pick Slip is the hero. The most unique feature of the app. Typography and layout of the slip should feel like a real printed document.
+Colour system:
+
+Token	Hex	Use
+--green	#16a34a	Healthy stock
+--amber	#d97706	Expiring <30d
+--red	#dc2626	Expired / critical
+--slate	#0f172a	Primary text
+--surface	#f8fafc	Background
+--card	#ffffff	Card surfaces
+13. Seed Data (Demo on First Load)
+To make the app immediately useful on first open:
+
+Medicines: Paracetamol 500mg, Ibuprofen 400mg, Amoxicillin 250mg,
+           Metformin 500mg, Cetirizine 10mg
+
+Batches (intentionally varied):
+- Paracetamol: 2 active batches (one expiring in 5 days), 1 expired
+- Ibuprofen: 1 active batch (expiring in 45 days)
+- Amoxicillin: 1 batch (expired yesterday) → triggers alert on load
+- Metformin: 3 active batches (all healthy)
+- Cetirizine: 0 active batches (fully expired) → shows red state
+This ensures every UI state (healthy, warning, expired, empty) is visible on first load without manual setup.
+
+14. Build Phases + Time Budget
+Phase	Scope	Time
+Phase 1	Vite + React setup, Tailwind, folder structure, seed data	15 min
+Phase 2	FEFO engine, health score, localStorage layer (pure logic)	25 min
+Phase 3	Context + Reducer (state wiring)	15 min
+Phase 4	Medicine card dashboard + search bar	20 min
+Phase 5	Add Batch modal	15 min
+Phase 6	Dispense modal + Pick Slip	20 min
+Phase 7	Alert sidebar + Quarantine tab	20 min
+Buffer	Polish, bug fixes, seed data QA	10 min
+Total		~2 hrs 20 min
+15. Success Criteria
+The build is done when:
+
+ FEFO dispense correctly splits across batches in right order
+ Expired batches are never included in sellable stock or dispense
+ Omni-search returns correct in-date count instantly
+ Pick Slip shows correct batch codes and quantities
+ Alerts correctly bucket expired / <7d / <30d
+ Quarantine + Dispose flow completes without data loss
+ Data survives page refresh
+ Demo seed data loads on first run and shows all states

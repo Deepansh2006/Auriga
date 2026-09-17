@@ -1,0 +1,14 @@
+import { daysUntilExpiry } from '../engine/healthScore'
+
+function AlertItem({ batch, medicine, tone, onQuarantine }) {
+  const days = daysUntilExpiry(batch.expiry)
+  return <div className="border-b border-ink/10 py-3 last:border-0"><div className="flex items-start gap-3"><span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${tone === 'red' ? 'bg-coral' : tone === 'orange' ? 'bg-amber' : 'bg-yellow-400'}`} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-ink">{medicine?.name ?? 'Unknown medicine'}</p><p className="mt-0.5 text-xs text-slate">Batch {batch.lot} · {days <= 0 ? `${Math.abs(days)}d overdue` : `${days}d remaining`}</p>{days <= 0 && <button onClick={() => onQuarantine(batch.id)} className="mt-2 text-xs font-bold text-coral hover:text-ink">Quarantine batch →</button>}</div></div></div>
+}
+
+export default function AlertFeed({ batches, medicines, onQuarantine }) {
+  const findMedicine = (batch) => medicines.find((medicine) => medicine.id === batch.medicineId)
+  const expired = batches.filter((batch) => batch.status === 'active' && daysUntilExpiry(batch.expiry) <= 0)
+  const underSeven = batches.filter((batch) => batch.status === 'active' && daysUntilExpiry(batch.expiry) > 0 && daysUntilExpiry(batch.expiry) <= 7)
+  const underThirty = batches.filter((batch) => batch.status === 'active' && daysUntilExpiry(batch.expiry) > 7 && daysUntilExpiry(batch.expiry) <= 30)
+  return <aside className="rounded-2xl border border-ink/10 bg-white p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-coral">Morning check</p><h2 className="mt-1 font-display text-lg font-extrabold">Expiry alerts</h2></div><span className="grid h-8 w-8 place-items-center rounded-full bg-coral/10 text-sm font-bold text-coral">{expired.length + underSeven.length + underThirty.length}</span></div><div className="mt-4">{expired.length > 0 && <><p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-coral">Expired</p>{expired.map((batch) => <AlertItem key={batch.id} batch={batch} medicine={findMedicine(batch)} tone="red" onQuarantine={onQuarantine} />)}</>}{underSeven.length > 0 && <><p className="mb-1 mt-4 text-[10px] font-bold uppercase tracking-widest text-amber">Under 7 days</p>{underSeven.map((batch) => <AlertItem key={batch.id} batch={batch} medicine={findMedicine(batch)} tone="orange" onQuarantine={onQuarantine} />)}</>}{underThirty.length > 0 && <><p className="mb-1 mt-4 text-[10px] font-bold uppercase tracking-widest text-yellow-600">Under 30 days</p>{underThirty.map((batch) => <AlertItem key={batch.id} batch={batch} medicine={findMedicine(batch)} tone="yellow" onQuarantine={onQuarantine} />)}</>}{expired.length + underSeven.length + underThirty.length === 0 && <p className="py-5 text-sm text-slate">All active stock is comfortably in date.</p>}</div></aside>
+}
