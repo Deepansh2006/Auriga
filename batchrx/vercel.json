@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://auriga-c3fu.onrender.com/api/:path*"
+    }
+  ]
+}
