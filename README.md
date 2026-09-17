@@ -309,7 +309,7 @@ batchrx/
 ├── postcss.config.js
 ├── tailwind.config.js
 ├── package.json
-└── requirements.txt
+└── package-lock.json
 ```
 
 ## Run locally on your computer
