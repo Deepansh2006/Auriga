@@ -18,6 +18,54 @@ Pharmacies do not really have one quantity of a medicine. They have several phys
 
 This is a pharmacy control room built for a pharmacist working quickly behind a counter. The React client is paired with a small Node API so automation and grading workflows operate on one authoritative state.
 
+## Live Demo
+
+The latest deployed application is available here:
+
+- **Live frontend:** [https://batchrx-gk2p.vercel.app/](https://batchrx-gk2p.vercel.app/)
+- **Live API:** [https://auriga-c3fu.onrender.com](https://auriga-c3fu.onrender.com)
+- **API health check:** [https://auriga-c3fu.onrender.com/health](https://auriga-c3fu.onrender.com/health)
+
+### Demo access
+
+```text
+Username: admin
+Password: admin
+```
+
+The frontend is hosted on Vercel. The Node API is hosted on Render, and Vercel proxies `/api/*` requests to the Render service through `batchrx/vercel.json`.
+
+> Render’s free service can sleep after inactivity. The first API request after a quiet period may take up to a minute while the service wakes up.
+
+### Hosted deployment settings
+
+#### Render API
+
+Create a Render Web Service from this repository with:
+
+```text
+Root Directory: batchrx
+Build Command: npm install
+Start Command: npm run server
+Node version: 24.20.0 or newer
+```
+
+The API listens on Render’s injected `PORT` value. The SQLite database is created under `data/batchrx.sqlite`; for durable production hosting, use a persistent disk or migrate the database to PostgreSQL.
+
+#### Vercel frontend
+
+Import the same repository into Vercel with:
+
+```text
+Framework Preset: Vite
+Root Directory: batchrx
+Build Command: npm run build
+Output Directory: dist
+Install Command: npm install
+```
+
+The committed `batchrx/vercel.json` rewrite connects the frontend’s `/api/*` requests to the live Render API.
+
 ## What is included
 
 ### Access
@@ -262,7 +310,7 @@ The final score is clamped between 0 and 100. Expired-only medicines score 0 and
 | Language | JavaScript / JSX | Small client-side product with no type-system overhead yet |
 | Styling | Tailwind CSS 3 | Consistent clinical visual system with fast responsive layout work |
 | State | Context API + `useReducer` | One central pharmacy state and explicit domain actions |
-| Persistence | API memory + `localStorage` fallback | One authoritative API state with standalone UI fallback |
+| Persistence | SQLite API + `localStorage` fallback | Durable server state with standalone UI resilience |
 | Integration | Notification outbox | Observable reorder messages for downstream services |
 | IDs | `crypto.randomUUID()` | Native unique identifiers for batches, medicines, and logs |
 | Validation | Oxlint | Fast static checks |
@@ -289,8 +337,8 @@ batchrx/
 │   │   ├── PickSlip.jsx              # Shelf pulling instructions
 │   │   ├── QuarantinePanel.jsx       # Dispose / return actions
 │   │   ├── ReorderCenter.jsx          # Reorder threshold action cards
-│   │   └── SearchBar.jsx             # Instant in-date stock lookup
-│   │   ├── WasteRadar.jsx             # Units approaching expiry
+│   │   ├── SearchBar.jsx              # Instant in-date stock lookup
+│   │   └── WasteRadar.jsx             # Units approaching expiry
 │   ├── context/
 │   │   └── PharmacyContext.jsx      # Reducer, actions, and persistence wiring
 │   ├── data/
